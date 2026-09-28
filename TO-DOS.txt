@@ -1,0 +1,4 @@
+- ADD MESSY DATA [fir_narrative]
+- ADD geographic_coordinates (police love maps!)
+- language_detected or raw_vernacular_text language translation/ transliteration.
+- 

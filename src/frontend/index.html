@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CHAKRA — Crime Intelligence Console</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚔</text></svg>" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+<body>
+
+  <!-- ============================================================
+       APP SHELL
+       ============================================================ -->
+  <div id="app">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">🚔</div>
+        <div class="brand-text">
+          <div class="brand-title">CHAKRA</div>
+          <div class="brand-sub">Crime Intelligence</div>
+        </div>
+      </div>
+
+      <nav class="nav" id="nav">
+        <button class="nav-item is-active" data-view="dashboard">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">Dashboard</span>
+        </button>
+        <button class="nav-item" data-view="firs">
+          <span class="nav-icon">📁</span>
+          <span class="nav-label">FIR Explorer</span>
+        </button>
+        <button class="nav-item" data-view="addfir">
+          <span class="nav-icon">📝</span>
+          <span class="nav-label">Register FIR</span>
+        </button>
+        <button class="nav-item" data-view="repeat">
+          <span class="nav-icon">🔁</span>
+          <span class="nav-label">Repeat Offenders</span>
+          <span class="nav-badge" id="badge-repeat">–</span>
+        </button>
+        <button class="nav-item" data-view="network">
+          <span class="nav-icon">🕸️</span>
+          <span class="nav-label">Network Graph</span>
+        </button>
+        <button class="nav-item" data-view="stations">
+          <span class="nav-icon">🏢</span>
+          <span class="nav-label">Stations</span>
+        </button>
+        <button class="nav-item" data-view="query">
+          <span class="nav-icon">💬</span>
+          <span class="nav-label">Ask CHAKRA</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-dot" id="status-dot"></div>
+        <div class="status-text" id="status-text">Connecting…</div>
+      </div>
+    </aside>
+
+    <!-- Main content area -->
+    <main class="main">
+
+      <!-- Topbar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 class="page-title" id="page-title">Dashboard</h1>
+          <p class="page-sub" id="page-sub">Real-time crime intelligence overview</p>
+        </div>
+        <div class="topbar-right">
+          <div class="search-mini">
+            <span class="search-icon">🔎</span>
+            <input id="global-search" type="text" placeholder="Search FIRs, accused, locations…" />
+          </div>
+          <div class="bob-chip" id="bob-chip">
+            <span class="bob-dot"></span>
+            <span>Bob: <b id="bob-mode">mock</b></span>
+          </div>
+        </div>
+      </header>
+
+      <!-- View container — router swaps content here -->
+      <section class="view" id="view">
+        <div class="loading-screen">
+          <div class="spinner"></div>
+          <p>Loading CHAKRA…</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ============================================================
+       MODAL
+       ============================================================ -->
+  <div class="modal-backdrop" id="modal-backdrop" hidden>
+    <div class="modal" id="modal">
+      <button class="modal-close" id="modal-close">✕</button>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       TOAST
+       ============================================================ -->
+  <div id="toast-container"></div>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Three.js — required by 3d-force-graph -->
+  <!-- <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script> -->
+  <!-- <script>window.THREE = window.THREE || THREE;</script> -->
+
+  <!-- D3 — required for custom forces -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+
+  <!-- vis-network — 2D network graph (replaces Three.js + 3d-force-graph) -->
+  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+
+  <!-- 3D Force Graph -->
+  <!-- <script src="https://unpkg.com/3d-force-graph@1.73.4/dist/3d-force-graph.min.js"></script> -->
+
+  <!-- App entry -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+team:
+  name: "Ragnarok"
+  track: "AI"
+  lead:
+    name: "Varshil"
+    email: "varshil@example.com"
+  members:
+    - name: "Varshil"
+      email: "varshil@example.com"
+
+submission:
+  title: "CHAKRA — Crime Intelligence & Pattern Detector"
+  problem_statement: >
+    UP Police's CCTNS system holds 3+ crore digitized FIRs with no NLP layer.
+    Serial offenders like the Jamtara gang evaded detection for years because
+    inter-district FIR connections were never surfaced. Pattern analysis is
+    entirely manual — a sub-inspector reading PDFs cannot possibly link 45
+    FIRs across 6 states that share the same modus operandi signature.
+  solution_summary: >
+    CHAKRA is a Bob-powered intelligence layer over FIR datasets. It extracts
+    entities from free-text narratives, computes a normalized crime
+    "fingerprint" (MO + weapon + vehicle + time + location) per FIR, and
+    surfaces repeat-offender clusters that span districts, states, and
+    jurisdictions. On the mock dataset of 1,000 FIRs, it detects 148
+    repeat-offender clusters, flags 540 FIRs, and identifies 8 offenders
+    using multiple aliases — a real-world Jamtara-gang-style finding.
+  key_features:
+    - "Fingerprint-based repeat-offender detection across 6 states and 22 districts"
+    - "Alias-trail matching — detects when the same accused uses different names"
+    - "Interactive 3D criminal network graph (Three.js) with 300+ nodes"
+    - "Bob-generated natural-language station briefings with actionable recommendations"
+    - "Natural-language query interface with retrieval + Bob synthesis"
+    - "Dashboard with pan-India KPIs, crime type breakdowns, and time-of-day radar"
