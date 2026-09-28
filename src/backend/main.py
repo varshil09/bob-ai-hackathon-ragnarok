@@ -679,6 +679,196 @@ def generate_narrative(req: GenerateNarrativeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ===============================================================
+# ⭐ SMART INGEST — Parse messy narrative into full structured record
+# ===============================================================
+class SmartIngestRequest(BaseModel):
+    narrative: str
+    # Optional seed fields the user may have already filled
+    state: str = ""
+    district: str = ""
+    police_station: str = ""
+    city: str = ""
+    crime_type: str = ""
+    incident_date: str = ""
+    incident_time: str = ""
+    complainant_name: str = ""
+    victim_age: int | None = None
+    victim_gender: str = ""
+    accused_name: str = ""
+    modus_operandi: str = ""
+
+
+@app.post("/api/firs/smart-ingest")
+def smart_ingest(req: SmartIngestRequest):
+    """
+    Bob parses a raw narrative and returns a full structured record,
+    ready to be saved to the DB. Also cleans the narrative.
+    """
+    if not req.narrative or len(req.narrative.strip()) < 20:
+        raise HTTPException(status_code=400, detail="Narrative too short to parse")
+
+    seed = {
+        "state": req.state,
+        "district": req.district,
+        "police_station": req.police_station,
+        "city": req.city,
+        "crime_type": req.crime_type,
+        "incident_date": req.incident_date,
+        "incident_time": req.incident_time,
+        "complainant_name": req.complainant_name,
+        "victim_age": req.victim_age,
+        "victim_gender": req.victim_gender,
+        "accused_name": req.accused_name,
+        "modus_operandi": req.modus_operandi,
+    }
+
+    bob = get_bob()
+    try:
+        result = bob.smart_ingest(req.narrative, seed=seed)
+        return {
+            "extracted": result,
+            "bob_source": "mock" if bob.use_mock else "bob-live",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ===============================================================
+# ⭐ SMART INGEST + SAVE — Extract AND persist in one call
+# ===============================================================
+@app.post("/api/firs/smart-ingest-and-save")
+def smart_ingest_and_save(req: SmartIngestRequest):
+    """
+    Full pipeline: parse narrative → structure → classify → save.
+    """
+    if not req.narrative or len(req.narrative.strip()) < 20:
+        raise HTTPException(status_code=400, detail="Narrative too short to parse")
+
+    seed = {
+        "state": req.state,
+        "district": req.district,
+        "police_station": req.police_station,
+        "city": req.city,
+        "crime_type": req.crime_type,
+        "incident_date": req.incident_date,
+        "incident_time": req.incident_time,
+        "complainant_name": req.complainant_name,
+        "victim_age": req.victim_age,
+        "victim_gender": req.victim_gender,
+        "accused_name": req.accused_name,
+        "modus_operandi": req.modus_operandi,
+    }
+
+    bob = get_bob()
+
+    # 1. Extract
+    try:
+        extracted = bob.smart_ingest(req.narrative, seed=seed)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Extraction failed: {e}")
+
+    # 2. Also classify for severity/priority
+    try:
+        classification = bob.classify_fir(extracted)
+    except Exception:
+        classification = {}
+
+    # 3. Auto-generate FIR ID
+    row = query_one("SELECT MAX(CAST(SUBSTR(fir_id, 5) AS INTEGER)) AS m FROM firs WHERE fir_id LIKE 'FIR-%'")
+    next_n = (row["m"] or 0) + 1
+    fir_id = f"FIR-{next_n:04d}"
+
+    # 4. Insert
+    conn = get_connection()
+    try:
+        conn.execute("""
+            INSERT INTO firs (
+                fir_id, state, district, police_station, city,
+                incident_date, report_date, incident_time, crime_type, bns_section,
+                fir_narrative, complainant_name, victim_age, victim_gender,
+                victim_occupation, victim_profile, accused_name, accused_alias,
+                accused_known, location_type, incident_location, modus_operandi,
+                time_bucket, vehicle_used, weapon_or_tool, property_or_target,
+                estimated_loss_inr, evidence_type, digital_evidence, cctv_status,
+                witness_count, evidence_item_count, arrest_status, recovery_status,
+                investigation_status, case_priority, pattern_keywords,
+                linked_phone, linked_upi_or_account
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            fir_id,
+            extracted.get("state", ""),
+            extracted.get("district", ""),
+            extracted.get("police_station", ""),
+            extracted.get("city", ""),
+            extracted.get("incident_date", ""),
+            extracted.get("incident_date", ""),
+            extracted.get("incident_time", ""),
+            extracted.get("crime_type", "Unclassified"),
+            extracted.get("bns_section", ""),
+            extracted.get("cleaned_narrative", req.narrative),
+            extracted.get("complainant_name", ""),
+            extracted.get("victim_age"),
+            extracted.get("victim_gender", ""),
+            extracted.get("victim_occupation", ""),
+            extracted.get("victim_profile", ""),
+            extracted.get("accused_name", ""),
+            extracted.get("accused_alias", ""),
+            1 if extracted.get("accused_known") else 0,
+            extracted.get("location_type", ""),
+            extracted.get("incident_location", ""),
+            extracted.get("modus_operandi", ""),
+            extracted.get("time_bucket", ""),
+            extracted.get("vehicle_used", ""),
+            extracted.get("weapon_or_tool", ""),
+            extracted.get("property_or_target", ""),
+            extracted.get("estimated_loss_inr") or 0,
+            extracted.get("evidence_type", ""),
+            extracted.get("digital_evidence", ""),
+            extracted.get("cctv_status", ""),
+            extracted.get("witness_count") or 0,
+            0,
+            extracted.get("arrest_status", ""),
+            extracted.get("recovery_status", ""),
+            "Under Investigation",
+            extracted.get("case_priority", "Medium"),
+            "",
+            "",
+            "",
+        ))
+
+        # Upsert taxonomy
+        crime = extracted.get("crime_type", "Unclassified")
+        existing_tax = conn.execute(
+            "SELECT crime_type FROM crime_taxonomy WHERE LOWER(crime_type) = LOWER(?)",
+            (crime,)
+        ).fetchone()
+        if existing_tax:
+            conn.execute(
+                "UPDATE crime_taxonomy SET fir_count = fir_count + 1 WHERE crime_type = ?",
+                (existing_tax["crime_type"],)
+            )
+        else:
+            conn.execute(
+                "INSERT INTO crime_taxonomy (crime_type, first_seen, fir_count) VALUES (?, ?, 1)",
+                (crime, datetime.now().isoformat())
+            )
+
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"Save failed: {e}")
+    finally:
+        conn.close()
+
+    return {
+        "status": "created",
+        "fir_id": fir_id,
+        "extracted": extracted,
+        "classification": classification,
+        "bob_source": "mock" if bob.use_mock else "bob-live",
+    }
+
 
 @app.get("/api/network")
 def network_graph(

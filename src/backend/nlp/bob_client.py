@@ -160,6 +160,118 @@ class BobClient:
             return _mock_parse_network_query(query, context)
         return self._real_parse_network_query(query, context)
 
+    # -----------------------------------------------------------
+    # 9. Smart Ingest — parse messy narrative into ALL DB fields
+    # -----------------------------------------------------------
+    def smart_ingest(self, narrative: str, seed: dict = None) -> dict:
+        """
+        Parse a messy FIR narrative into a full structured record.
+        `seed` is optional — user-provided hints that should not be overwritten.
+        """
+        if self.use_mock:
+            return _mock_smart_ingest(narrative, seed or {})
+        return self._real_smart_ingest(narrative, seed or {})
+
+    def _real_smart_ingest(self, narrative: str, seed: dict) -> dict:
+        system_prompt = """You are a forensic FIR intelligence parser for Indian police.
+
+You receive a messy, free-text FIR narrative. Your task: extract EVERY structured field.
+
+Return VALID JSON ONLY (no markdown, no preamble) with EXACTLY these keys:
+
+{
+  "crime_type": "one of: Mobile Snatching, Cyber Fraud, Vehicle Theft, Burglary, Robbery, UPI Fraud, Extortion, Fraud / Cheating, Assault, Murder / Homicide, Sexual Offence, Kidnapping / Abduction, Missing Person, Drug Possession, or a new Title Case category",
+  "bns_section": "suggested legal section or empty string",
+  "state": "state name or empty",
+  "district": "district name or empty",
+  "police_station": "police station name or empty",
+  "city": "city name or empty",
+  "incident_date": "DD-MM-YYYY or empty",
+  "incident_time": "HH:MM or empty",
+  "time_bucket": "morning | afternoon | evening | night | late night | empty",
+  "complainant_name": "full name or empty",
+  "victim_age": integer or null,
+  "victim_gender": "Male | Female | Other | empty",
+  "victim_occupation": "occupation or empty",
+  "victim_profile": "short descriptive profile or empty",
+  "accused_name": "primary accused name or empty",
+  "accused_alias": "alias or empty",
+  "accused_known": true | false,
+  "location_type": "online | roadside | market | residential area | commercial area | transit area | workplace | empty",
+  "incident_location": "specific location string or empty",
+  "modus_operandi": "short phrase, e.g. 'motorcycle approach' or 'fake refund request'",
+  "vehicle_used": "vehicle type or empty",
+  "weapon_or_tool": "weapon/tool or empty",
+  "property_or_target": "property or victim target or empty",
+  "estimated_loss_inr": integer or 0,
+  "evidence_type": "evidence detail or empty",
+  "digital_evidence": "digital evidence type or empty",
+  "cctv_status": "Available | Not available | Requested | empty",
+  "witness_count": integer or 0,
+  "arrest_status": "Not arrested | Arrested | Notice issued | Accused unidentified | empty",
+  "recovery_status": "string or empty",
+  "case_priority": "Low | Medium | High",
+  "severity": "Low | Medium | High | Critical",
+  "cleaned_narrative": "the narrative rewritten in clean, formal CCTNS FIR style — single paragraph, no typos, no missing transitions",
+  "confidence": 0.0 to 1.0 (your confidence in the extraction),
+  "notes": "one sentence on what was unclear or missing in the original"
+}
+
+STRICT RULES:
+1. Extract ONLY what is present or clearly implied. Empty fields must be empty strings / null / 0.
+2. NEVER invent names, dates, locations, or amounts.
+3. cleaned_narrative must read like an official FIR: "On {date} at about {time}, the complainant {name}, aged {age}, reported an alleged {crime} incident at/near a {location} within the jurisdiction of {police_station}, {district}, {state}. The reported modus operandi was {mo}..."
+4. If a field is provided in the seed hints, prefer the seed value.
+5. Return ONLY the JSON object."""
+
+        seed_str = json.dumps({k: v for k, v in seed.items() if v}, indent=2) if seed else "{}"
+
+        prompt = f"""<narrative>
+{narrative}
+</narrative>
+
+<seed_hints>
+{seed_str}
+</seed_hints>
+
+Extract structured fields as JSON:"""
+
+        try:
+            raw = self._call_bob(prompt, system=system_prompt, max_tokens=1200)
+            raw = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.MULTILINE)
+            parsed = json.loads(raw)
+
+            # Defensive coercion
+            for k in ["victim_age", "estimated_loss_inr", "witness_count"]:
+                if parsed.get(k) is None:
+                    parsed[k] = 0 if k != "victim_age" else None
+                try:
+                    parsed[k] = int(parsed[k]) if parsed[k] is not None else parsed[k]
+                except (ValueError, TypeError):
+                    parsed[k] = None if k == "victim_age" else 0
+
+            # Empty string defaults
+            for k in ["bns_section", "state", "district", "police_station", "city",
+                      "incident_date", "incident_time", "time_bucket", "complainant_name",
+                      "victim_gender", "victim_occupation", "victim_profile",
+                      "accused_name", "accused_alias", "location_type", "incident_location",
+                      "modus_operandi", "vehicle_used", "weapon_or_tool", "property_or_target",
+                      "evidence_type", "digital_evidence", "cctv_status", "arrest_status",
+                      "recovery_status"]:
+                if parsed.get(k) is None:
+                    parsed[k] = ""
+
+            if not parsed.get("crime_type"):
+                parsed["crime_type"] = "Unclassified"
+            if not parsed.get("case_priority"):
+                parsed["case_priority"] = "Medium"
+
+            return parsed
+        except Exception as e:
+            result = _mock_smart_ingest(narrative, seed)
+            result["_fallback_reason"] = str(e)
+            return result
+
     def _real_parse_network_query(self, query: str, context: dict) -> dict:
         system_prompt = """You are a query parser for a criminal network graph.
 
@@ -630,6 +742,245 @@ def _mock_classify_fir(fir: dict) -> dict:
         "public_interest": public_interest,
     }
 
+
+# ===============================================================
+# Mock: Smart Ingest
+# ===============================================================
+def _mock_smart_ingest(narrative: str, seed: dict) -> dict:
+    """
+    Rule-based extraction of every field from a narrative.
+    Falls back to seed values where present.
+    """
+    text = (narrative or "").strip()
+    lower = text.lower()
+
+    # --- Crime type ---
+    crime_map = [
+        (r"mobile snatch|phone snatch|snatched.*mobile", "Mobile Snatching"),
+        (r"cyber fraud|cyber crime", "Cyber Fraud"),
+        (r"upi|upi fraud", "UPI Fraud"),
+        (r"vehicle theft|car theft|bike theft|scooter.*theft|motorcycle.*theft", "Vehicle Theft"),
+        (r"burglar|break[- ]in|housebreak", "Burglary"),
+        (r"robber|dacoity", "Robbery"),
+        (r"extort|ransom|threat calls", "Extortion"),
+        (r"cheat|fraud", "Fraud / Cheating"),
+        (r"assault|attack|hurt", "Assault"),
+        (r"murder|homicide|kill", "Murder / Homicide"),
+        (r"rape|sexual", "Sexual Offence"),
+        (r"kidnap|abduct", "Kidnapping / Abduction"),
+        (r"missing", "Missing Person"),
+        (r"drug|narcotic|ganja|heroin", "Drug Possession"),
+    ]
+    crime_type = seed.get("crime_type")
+    if not crime_type:
+        for pat, ct in crime_map:
+            if re.search(pat, lower):
+                crime_type = ct
+                break
+    if not crime_type:
+        crime_type = "Unclassified"
+
+    # --- Modus operandi ---
+    mo_patterns = [
+        (r"motorcycle approach|on motorcycle", "motorcycle approach"),
+        (r"two[- ]person|two men on", "two-person motorcycle team"),
+        (r"fake bank|bank representative", "fake bank representative call"),
+        (r"fake refund", "fake refund request"),
+        (r"fake job", "fake job offer"),
+        (r"steering[- ]lock", "steering-lock bypass"),
+        (r"rear[- ]door", "rear-door entry"),
+        (r"threat call|threatened", "threat calls"),
+        (r"grab[- ]and[- ]flee|snatched and fled", "grab-and-flee"),
+        (r"kyc", "KYC update message"),
+        (r"upi payment request", "UPI payment request"),
+        (r"collect request", "collect-request scam"),
+        (r"window entry", "window entry"),
+        (r"roof", "roof entry"),
+        (r"lock break", "lock breaking"),
+        (r"duplicate key", "key duplication"),
+        (r"master key", "master-key method"),
+        (r"qr code", "QR-code payment trick"),
+        (r"remote support", "remote-support application"),
+    ]
+    mo = seed.get("modus_operandi")
+    if not mo:
+        for pat, m in mo_patterns:
+            if re.search(pat, lower):
+                mo = m
+                break
+
+    # --- Time bucket ---
+    time_bucket = seed.get("time_bucket")
+    if not time_bucket:
+        if re.search(r"\b(morning|am hours|dawn)\b", lower):
+            time_bucket = "morning"
+        elif re.search(r"\b(afternoon|noon|midday)\b", lower):
+            time_bucket = "afternoon"
+        elif re.search(r"\b(evening|dusk|sunset)\b", lower):
+            time_bucket = "evening"
+        elif re.search(r"\b(late night|midnight|1 am|2 am|3 am|4 am)\b", lower):
+            time_bucket = "late night"
+        elif re.search(r"\b(night|pm hours|dark)\b", lower):
+            time_bucket = "night"
+
+    # --- Weapon ---
+    weapon = seed.get("weapon_or_tool")
+    if not weapon:
+        for w in ["knife", "gun", "pistol", "rod", "sharp weapon", "blunt object", "iron rod"]:
+            if w in lower:
+                weapon = w
+                break
+
+    # --- Vehicle ---
+    vehicle = seed.get("vehicle_used")
+    if not vehicle:
+        for v in ["motorcycle", "scooter", "car", "hatchback", "pickup van", "auto", "bus"]:
+            if v in lower:
+                vehicle = v
+                break
+
+    # --- Victim age ---
+    victim_age = seed.get("victim_age")
+    if not victim_age:
+        m = re.search(r"aged\s+(\d{1,3})", lower)
+        if m:
+            victim_age = int(m.group(1))
+
+    # --- Victim gender ---
+    victim_gender = seed.get("victim_gender")
+    if not victim_gender:
+        if re.search(r"\b(he|male|man)\b", lower):
+            victim_gender = "Male"
+        elif re.search(r"\b(she|female|woman|lady)\b", lower):
+            victim_gender = "Female"
+
+    # --- Complainant (complainant X reported) ---
+    complainant = seed.get("complainant_name")
+    if not complainant:
+        m = re.search(r"complainant\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,3})", text)
+        if m:
+            complainant = m.group(1)
+
+    # --- Accused ---
+    accused = seed.get("accused_name")
+    if not accused:
+        m = re.search(r"(?:accused|suspected accused)\s+(?:was|is)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,3})", text)
+        if m:
+            accused = m.group(1)
+
+    # --- Location type ---
+    loc_type = seed.get("location_type")
+    if not loc_type:
+        if re.search(r"\bonline|internet|website|app\b", lower):
+            loc_type = "online"
+        elif re.search(r"\broadside|highway\b", lower):
+            loc_type = "roadside"
+        elif re.search(r"\bmarket\b", lower):
+            loc_type = "market"
+        elif re.search(r"\bresidential|house\b", lower):
+            loc_type = "residential area"
+        elif re.search(r"\bcommercial\b", lower):
+            loc_type = "commercial area"
+        elif re.search(r"\bbus stand|railway|transit\b", lower):
+            loc_type = "transit area"
+        elif re.search(r"\bworkplace|office\b", lower):
+            loc_type = "workplace"
+
+    # --- Loss ---
+    loss = seed.get("estimated_loss_inr")
+    if not loss:
+        m = re.search(r"(?:₹|rs\.?|inr)\s*([\d,]+)", lower)
+        if m:
+            try:
+                loss = int(m.group(1).replace(",", ""))
+            except ValueError:
+                loss = 0
+
+    # --- CCTV ---
+    cctv = seed.get("cctv_status")
+    if not cctv:
+        if re.search(r"cctv|surveillance.*available", lower):
+            cctv = "Available"
+
+    # --- Evidence ---
+    evidence = seed.get("evidence_type")
+    if not evidence:
+        if "cctv" in lower:
+            evidence = "CCTV footage"
+        elif "fingerprint" in lower:
+            evidence = "fingerprint lift"
+        elif "forensic" in lower:
+            evidence = "forensic examination"
+        elif "witness" in lower:
+            evidence = "witness statement"
+
+    # --- Time of day from HH:MM ---
+    incident_time = seed.get("incident_time")
+    if not incident_time:
+        m = re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", text)
+        if m:
+            incident_time = f"{int(m.group(1)):02d}:{m.group(2)}"
+
+    # --- Date ---
+    incident_date = seed.get("incident_date")
+    if not incident_date:
+        m = re.search(r"\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b", text)
+        if m:
+            d, mo_, y = m.group(1), m.group(2), m.group(3)
+            incident_date = f"{int(d):02d}-{int(mo_):02d}-{y}"
+
+    # --- Cleaned narrative ---
+    cleaned = text.strip()
+    if not cleaned.endswith("."):
+        cleaned += "."
+    # Collapse whitespace
+    cleaned = re.sub(r"\s+", " ", cleaned)
+
+    # --- Confidence ---
+    filled = sum(1 for v in [
+        crime_type if crime_type != "Unclassified" else None,
+        mo, time_bucket, weapon, vehicle, victim_age, victim_gender,
+        complainant, accused, loc_type, loss, incident_date, incident_time,
+    ] if v)
+    confidence = round(min(1.0, filled / 13.0), 2)
+
+    return {
+        "crime_type": crime_type,
+        "bns_section": seed.get("bns_section", ""),
+        "state": seed.get("state", ""),
+        "district": seed.get("district", ""),
+        "police_station": seed.get("police_station", ""),
+        "city": seed.get("city", ""),
+        "incident_date": incident_date or "",
+        "incident_time": incident_time or "",
+        "time_bucket": time_bucket or "",
+        "complainant_name": complainant or "",
+        "victim_age": victim_age,
+        "victim_gender": victim_gender or "",
+        "victim_occupation": seed.get("victim_occupation", ""),
+        "victim_profile": seed.get("victim_profile", ""),
+        "accused_name": accused or "",
+        "accused_alias": seed.get("accused_alias", ""),
+        "accused_known": bool(accused),
+        "location_type": loc_type or "",
+        "incident_location": seed.get("incident_location", ""),
+        "modus_operandi": mo or "",
+        "vehicle_used": vehicle or "",
+        "weapon_or_tool": weapon or "",
+        "property_or_target": seed.get("property_or_target", ""),
+        "estimated_loss_inr": loss or 0,
+        "evidence_type": evidence or "",
+        "digital_evidence": seed.get("digital_evidence", ""),
+        "cctv_status": cctv or "",
+        "witness_count": seed.get("witness_count", 0),
+        "arrest_status": seed.get("arrest_status", ""),
+        "recovery_status": seed.get("recovery_status", ""),
+        "case_priority": "High" if confidence > 0.7 else "Medium",
+        "severity": "High" if crime_type in ("Murder / Homicide", "Robbery", "Sexual Offence", "Kidnapping / Abduction") else "Medium",
+        "cleaned_narrative": cleaned,
+        "confidence": confidence,
+        "notes": f"Extracted {filled}/13 key fields from narrative." if confidence < 0.8 else "Strong extraction — all key fields present.",
+    }
 
 # ===============================================================
 # Mock: Offender brief
