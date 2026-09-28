@@ -1,7 +1,8 @@
 """
 CHAKRA — Configuration
-Loads environment variables with sane defaults for local dev.
+Loads environment variables with sane defaults for local dev + Render deploy.
 """
+import os
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -19,9 +20,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Server
-    host: str = "127.0.0.1"
-    port: int = 8000
+    # Server — reads HOST / PORT from environment (Render sets PORT)
+    host: str = os.getenv("HOST", "127.0.0.1")
+    port: int = int(os.getenv("PORT", "8000"))
     debug: bool = True
 
     # Data
@@ -32,10 +33,9 @@ class Settings(BaseSettings):
     use_mock_bob: bool = True
 
     # Bob Inference API
-    bob_api_key:  str = ""
+    bob_api_key: str = ""
     bob_base_url: str = "https://api.us-east.bob.ibm.com/inference/v1"
     bob_model_id: str = "premium"
-
 
     # CORS — comma-separated in .env, split at load
     cors_origins: str = "http://localhost:5500,http://127.0.0.1:5500,http://localhost:3000"

@@ -1,33 +1,42 @@
 team:
   name: "Ragnarok"
-  track: "AI"
+  track: "AI & Predictive"
   lead:
-    name: "Varshil"
-    email: "varshil@example.com"
+    name: "Varshil Parmar"
+    email: "parmarvarshil09@gmail.com"
   members:
     - name: "Varshil"
-      email: "varshil@example.com"
+      email: "parmarvarshil09@gmail.com"
+    - name: "Vikram"
+      email: "vikramprajapati0107@gmail.com"
+    - name: "Darshan"
+      email: "darshansankhala29@gmail.com"
 
 submission:
-  title: "CHAKRA — Crime Intelligence & Pattern Detector"
+  title: "CHAKRA — FIR Intelligence & Crime Pattern Detector"
   problem_statement: >
     UP Police's CCTNS system holds 3+ crore digitized FIRs with no NLP layer.
     Serial offenders like the Jamtara gang evaded detection for years because
     inter-district FIR connections were never surfaced. Pattern analysis is
-    entirely manual — a sub-inspector reading PDFs cannot possibly link 45
-    FIRs across 6 states that share the same modus operandi signature.
+    entirely manual — a sub-inspector cannot link 45 FIRs across 6 states
+    that share the same modus operandi signature. Name-based matching fails
+    because offenders use multiple aliases across jurisdictions.
   solution_summary: >
-    CHAKRA is a Bob-powered intelligence layer over FIR datasets. It extracts
-    entities from free-text narratives, computes a normalized crime
-    "fingerprint" (MO + weapon + vehicle + time + location) per FIR, and
-    surfaces repeat-offender clusters that span districts, states, and
-    jurisdictions. On the mock dataset of 1,000 FIRs, it detects 148
-    repeat-offender clusters, flags 540 FIRs, and identifies 8 offenders
-    using multiple aliases — a real-world Jamtara-gang-style finding.
+    CHAKRA is a Bob-powered intelligence layer over FIR datasets. It ingests
+    raw narratives (via Bob Smart Ingest), extracts structured entities,
+    computes a normalized crime "fingerprint" per FIR (MO + weapon + vehicle
+    + time + location), and surfaces repeat-offender clusters that span
+    districts, states, and jurisdictions. On a 1,000-FIR mock dataset it
+    detects 148 repeat-offender clusters, flags 540 FIRs (54%), surfaces 135
+    cross-state clusters (91%), and identifies 8 alias-linked offenders —
+    including a single UPI-fraud signature spanning 45 FIRs across 6 states,
+    matching the exact Jamtara-gang pattern.
   key_features:
+    - "Bob Smart Ingest — parses messy raw narratives into 30+ structured fields"
     - "Fingerprint-based repeat-offender detection across 6 states and 22 districts"
-    - "Alias-trail matching — detects when the same accused uses different names"
-    - "Interactive 3D criminal network graph (Three.js) with 300+ nodes"
+    - "Alias-trail matching — detects the same accused using different names"
+    - "Interactive 2D criminal network graph with ego-network highlighting"
     - "Bob-generated natural-language station briefings with actionable recommendations"
-    - "Natural-language query interface with retrieval + Bob synthesis"
-    - "Dashboard with pan-India KPIs, crime type breakdowns, and time-of-day radar"
+    - "Bob offender case briefs — full 5-paragraph analysis per accused"
+    - "Natural-language network search — ask Bob to filter the graph"
+    - "Dashboard with pan-India KPIs, crime breakdowns, and time-of-day radar"

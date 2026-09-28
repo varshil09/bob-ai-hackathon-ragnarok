@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: chakra-backend
+    runtime: python
+    plan: free
+    rootDir: src/backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: CHAKRA_USE_MOCK_BOB
+        value: "false"
+      - key: CHAKRA_BOB_API_KEY
+        sync: false  # you'll paste this in the Render dashboard
+      - key: CHAKRA_BOB_BASE_URL
+        value: https://api.us-east.bob.ibm.com/inference/v1
+      - key: CHAKRA_BOB_MODEL_ID
+        value: premium
+      - key: CHAKRA_CORS_ORIGINS
+        value: https://chakra-ragnarok.pages.dev
+      - key: CHAKRA_HOST
+        value: 0.0.0.0
+      - key: CHAKRA_PORT
+        value: "10000"

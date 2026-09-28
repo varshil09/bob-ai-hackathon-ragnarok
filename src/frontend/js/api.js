@@ -2,7 +2,9 @@
  * CHAKRA — API Client (cache-busted)
  */
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+  ? "http://127.0.0.1:8000"
+  : "https://chakra-backend.onrender.com";
 
 async function request(path, options = {}) {
   // ⭐ Cache-bust every GET
